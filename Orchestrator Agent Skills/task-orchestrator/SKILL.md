@@ -38,7 +38,8 @@ You do not write business code. You do not make architecture decisions. You are 
    - Acceptance criteria (`Acceptance Criteria` section)
 4. Build a dependency graph and confirm there are no circular dependencies
 5. **Create a persistent progress file** `PROGRESS.md` (at the same level as the task folder) with initial state
-6. Output an execution plan summary and wait for user confirmation to begin
+6. **Create `ACCEPTANCE.md`** (in the task folder) — extract acceptance criteria from all TASK files into a single checklist grouped by task. This is the orchestrator's verification record. Sub-agents never touch this file.
+7. Output an execution plan summary and wait for user confirmation to begin
 
 #### `PROGRESS.md` Initialization Template
 
@@ -65,6 +66,28 @@ You do not write business code. You do not make architecture decisions. You are 
 The progress file is the orchestrator's persistent state. If context is interrupted (conversation disconnected, task too large),
 re-activating the orchestrator reads this file to resume from the last known progress.
 
+#### `ACCEPTANCE.md` Initialization Template
+
+```markdown
+# Acceptance Criteria
+
+> Task folder: <path>
+> Generated: <ISO timestamp>
+
+## TASK-0: <title>
+
+- [ ] <criterion 1>
+- [ ] <criterion 2>
+- ...
+
+## TASK-1: <title>
+
+- [ ] <criterion 1>
+- ...
+```
+
+The orchestrator extracts acceptance criteria from each TASK file's `Acceptance Criteria` section (plain text bullets) and converts them into checkboxes here. TASK files themselves use plain bullets (no checkboxes) — they serve as the sub-agent's "definition of done" to aim for. Only the orchestrator marks checkboxes in ACCEPTANCE.md during VERIFY.
+
 ### Phase 1.5: Archive Source Files
 
 After the task plan is loaded and the user confirms to begin, archive non-task files in the task folder:
@@ -73,6 +96,7 @@ After the task plan is loaded and the user confirms to begin, archive non-task f
 2. Identify files to keep in the root:
    - `TASK-*.md` (task files)
    - `PROGRESS.md` (progress file)
+   - `ACCEPTANCE.md` (acceptance criteria checklist)
 3. Move all other files (planning docs, review reports, analysis notes, etc.) to an `archive/` subfolder
 4. Create `archive/` if it doesn't exist
 5. Record the archive operation in the `PROGRESS.md` execution log:
@@ -148,15 +172,17 @@ However, both must complete and pass acceptance before advancing to tasks that d
 After the sub-agent returns results, the orchestrator performs acceptance directly (not delegated):
 
 1. Run `getDiagnostics` on all modified files — must be zero errors
-2. Check each acceptance criterion in the task file:
+2. Check each acceptance criterion from the task file (reference the plain-text list in the TASK file):
    - Does the file exist?
    - Were the required methods/classes created?
    - Is the dependency direction correct? (use grepSearch to check import statements)
-3. If verification fails:
+3. **Mark results in `ACCEPTANCE.md`** — check off each criterion with ✅ (pass) or ❌ (fail)
+4. If verification fails:
    - Diagnose the error cause
    - Re-dispatch the sub-agent with the error information attached
    - Maximum 2 retries
    - 2 failed fixes → mark task as blocked, report reason, wait for manual intervention
+   - On successful retry, update ❌ marks to ✅ in ACCEPTANCE.md
 
 #### ADVANCE — Update persistent progress
 
@@ -191,16 +217,38 @@ After the sub-agent returns results, the orchestrator performs acceptance direct
 After all tasks are complete:
 1. Update the status at the top of `PROGRESS.md` to `Completed`
 2. Append a summary at the end of the execution log
-3. Output the full list of changed files and suggested manual verification steps in chat
+3. **Append a "Core Delivery" section** to `PROGRESS.md` (see template below)
+4. Output the full list of changed files and suggested manual verification steps in chat
+
+#### Core Delivery Section Template
+
+After the execution log, append:
+
+```markdown
+## Core Deliverables
+
+> In 2–4 sentences, clearly describe what this task actually solved, what mechanisms were introduced, and what guardrails were put in place.
+> Written for future developers, not for a task checklist.
+
+<Example>
+The two root causes of the rotation bug have been fixed (TransformHandles now subscribes to the viewport signal, pointer capture moved to a stable parent container), while establishing a complete reactive coordinate pipeline (getWorldTransformSignal → screenBounds signal → useSignalValue), an HSM defense layer (5s timeout watchdog + visibilitychange recovery), and a usePointerSession hook to unify pointer capture lifecycle management. Architecture tests serve as CI guardrails to prevent future regressions.
+```
+
+**Writing Guidelines:**
+- Say "what was solved", not "what tasks were done"
+- Name the core mechanisms introduced (for future searchability)
+- If there are architectural guardrails (tests, steering rules), mention them in a dedicated sentence
+- No more than 4 sentences, no bullet points
 
 ### Context Recovery
 
 If orchestration is interrupted mid-way (conversation disconnected, context overflow), re-activating the orchestrator:
 
 1. Read `PROGRESS.md`
-2. Find the last `✅ Done` task
-3. Continue from the next `⬜ Pending` task
-4. If there are `❌ Blocked` tasks, report the blocked reason and wait for user instruction (retry / skip / terminate)
+2. Read `ACCEPTANCE.md` (to see which criteria have been checked)
+3. Find the last `✅ Done` task
+4. Continue from the next `⬜ Pending` task
+5. If there are `❌ Blocked` tasks, report the blocked reason and wait for user instruction (retry / skip / terminate)
 
 ## Progress Table Format
 
@@ -224,5 +272,6 @@ Every status change must update both the file and the chat output simultaneously
 - ❌ Do not skip tasks — even simple-looking ones must go through the full loop
 - ❌ Do not modify task files themselves (read-only)
 - ✅ Acceptance must be done by the orchestrator directly (not delegated to sub-agents)
+- ✅ Mark acceptance results in `ACCEPTANCE.md` during VERIFY (not in TASK files)
 - ✅ Output the progress table after each task completes
 - ✅ Tasks with no dependency relationship can be dispatched in parallel
