@@ -50,6 +50,44 @@ You do not write business code. You do not make architecture decisions. You are 
 > Start time: <ISO timestamp>
 > Status: In Progress
 
+## Dependency Graph & Execution Plan
+
+> This section is the recovery blueprint. A new agent reading this file
+> can reconstruct the full execution strategy without re-reading task files.
+
+### Dependencies
+
+(For each task, list its prerequisites using arrow notation)
+
+```
+TASK-0 — no deps
+TASK-1 → depends on: TASK-0
+TASK-2 → depends on: TASK-1
+...
+```
+
+### Execution Order
+
+(List the concrete dispatch sequence, grouping parallel tasks on the same step)
+
+```
+Step 1: TASK-0
+Step 2: TASK-1 + TASK-5 (parallel — no mutual dependency)
+Step 3: TASK-2
+...
+```
+
+### Task Summaries
+
+(One-line summary of each task's goal — enough for a new agent to understand
+what each task does without opening the task file)
+
+| Task | Layer | Risk | Summary |
+|------|-------|------|---------|
+| TASK-0 | Foundation | Zero | Create StrokeBuilder incremental processor |
+| TASK-1 | Editor | Medium | Create StrokeSession, rewrite PenTool |
+| ... | | | |
+
 ## Progress Table
 
 | Task | Status | Start Time | End Time | Notes |
@@ -65,6 +103,10 @@ You do not write business code. You do not make architecture decisions. You are 
 
 The progress file is the orchestrator's persistent state. If context is interrupted (conversation disconnected, task too large),
 re-activating the orchestrator reads this file to resume from the last known progress.
+The "Dependency Graph & Execution Plan" section ensures a new agent can determine:
+- Which tasks are safe to dispatch next (by checking dependencies against the Progress Table)
+- Which tasks can run in parallel
+- What each task does (without re-reading TASK files for basic orientation)
 
 #### `ACCEPTANCE.md` Initialization Template
 
@@ -245,10 +287,12 @@ The two root causes of the rotation bug have been fixed (TransformHandles now su
 If orchestration is interrupted mid-way (conversation disconnected, context overflow), re-activating the orchestrator:
 
 1. Read `PROGRESS.md`
-2. Read `ACCEPTANCE.md` (to see which criteria have been checked)
-3. Find the last `✅ Done` task
-4. Continue from the next `⬜ Pending` task
-5. If there are `❌ Blocked` tasks, report the blocked reason and wait for user instruction (retry / skip / terminate)
+2. Read the **Dependency Graph & Execution Plan** section to understand task dependencies, execution order, and which tasks can be parallelized
+3. Read `ACCEPTANCE.md` (to see which criteria have been checked)
+4. Find the last `✅ Done` task in the Progress Table
+5. Cross-reference with the Execution Order to determine the next task(s) to dispatch
+6. Continue from the next `⬜ Pending` task(s) whose dependencies are all `✅ Done`
+7. If there are `❌ Blocked` tasks, report the blocked reason and wait for user instruction (retry / skip / terminate)
 
 ## Progress Table Format
 
